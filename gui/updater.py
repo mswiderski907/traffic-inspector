@@ -49,6 +49,9 @@ class SafeGUIUpdater:
             if not self.text_widget or not self.text_widget.winfo_exists():
                 return
 
+            scroll_y = self.text_widget.yview()
+            scroll_x = self.text_widget.xview()
+
             # Update dropdown to reflect current setting
             if self.view_dropdown and self.view_dropdown.winfo_exists():
                 current_value = (
@@ -72,6 +75,9 @@ class SafeGUIUpdater:
 
             self.text_widget.delete("1.0", tk.END)
             self.text_widget.insert("1.0", format_connections(self.connections))
+
+            self.text_widget.yview_moveto(scroll_y[0])
+            self.text_widget.xview_moveto(scroll_x[0])
 
         except (tk.TclError, RuntimeError, AttributeError):
             # Widget no longer exists, mark as invalid

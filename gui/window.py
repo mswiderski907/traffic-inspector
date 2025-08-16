@@ -82,12 +82,18 @@ def show_window():
     def refresh_connections_display():
         """Manually refresh the connections display"""
         try:
+            scroll_y = text.yview()
+            scroll_x = text.xview()
+
             new_connections = list_connections_fast(core.config.SHOW_ONLY_ACTIVE)
             gui_updater.connections = new_connections
 
             if text and text.winfo_exists():
                 text.delete("1.0", tk.END)
                 text.insert("1.0", format_connections(new_connections))
+
+                text.yview_moveto(scroll_y[0])
+                text.xview_moveto(scroll_x[0])
 
                 # Start hostname resolution for new connections that need it
                 for conn in new_connections:

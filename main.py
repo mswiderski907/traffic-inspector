@@ -14,7 +14,6 @@ import os
 # TODO: run on windows startup
 # TODO: add a taskbar icon
 # TODO: option to hide loopback addresses
-# TODO: make the scroll wheel not reset when window is updated
 # TODO: maybe an option to show where on the PC a service is running
 # TODO: auto-updating list of malicious IPs that trigger notifications?
 # TODO: ping active connections?
