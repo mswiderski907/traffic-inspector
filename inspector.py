@@ -1,3 +1,7 @@
+"""
+Depreciated. Run main.py instead
+"""
+
 import tkinter as tk
 from threading import Thread, Event
 import socket
@@ -9,17 +13,6 @@ import pystray
 from PIL import Image, ImageDraw
 import time
 
-# TODO: fix 'async handler deleted by the wrong thread' crash after hitting exit button
-# TODO: make the 'View' banner at the top of the window into a dropdown select, can get rid of menu option
-# TODO: Add a way to permanently save trusted connections (maybe an option to mark a connection as trusted)
-# TODO: notification for new untrusted connections (must be able to mute/disable)
-# TODO: make the window look better
-# TODO: run on windows startup
-# TODO: add a taskbar icon
-# TODO: option to hide loopback addresses
-# TODO: make the scroll wheel not reset when window is updated
-# TODO: maybe an option to show where on the PC a service is running
-# TODO: auto-updating list of malicious IPs that trigger notifications?
 
 hostname_cache = {}
 
@@ -28,7 +21,6 @@ trusted_networks = [
     ip_network("192.168.0.0/16"),
     ip_network("10.0.0.0/8"),
     ip_network("::1"),
-    ip_network("172.172.255.218"),  # svchost connection to Microsoft
 ]
 
 trusted_domains = []
@@ -126,26 +118,83 @@ def format_connections(connections):
     return "\n".join(output) if output else "No connections found."
 
 
-def resolve_hostname_async(ip, text_widget_ref, connections_ref):
+class SafeGUIUpdater:
+    """Thread-safe GUI updater that prevents crashes when window is closed"""
+
+    def __init__(self):
+        self.text_widget = None
+        self.connections = None
+        self.status_label = None
+        self.is_valid = True
+        self._lock = Event()
+        self._lock.set()
+
+    def set_widgets(self, text_widget, connections, status_label):
+        """Set the GUI widgets to update"""
+        self.text_widget = text_widget
+        self.connections = connections
+        self.status_label = status_label
+        self.is_valid = True
+
+    def invalidate(self):
+        """Mark this updater as invalid (window closed)"""
+        self.is_valid = False
+        self.text_widget = None
+        self.connections = None
+        self.status_label = None
+
+    def safe_update_display(self):
+        """Safely update display from cache"""
+        if not self.is_valid or not window_open:
+            return
+
+        try:
+            if not self.text_widget or not self.text_widget.winfo_exists():
+                return
+
+            if self.status_label and self.status_label.winfo_exists():
+                self.status_label.config(
+                    text=f"View: {'Active Connections Only' if SHOW_ONLY_ACTIVE else 'All Connections'}"
+                )
+
+            # Update connections with resolved hostnames
+            for conn in self.connections:
+                if conn["remote_ip"] and conn["remote_ip"] in hostname_cache:
+                    resolved_host = hostname_cache[conn["remote_ip"]]
+                    if resolved_host != conn["remote_host"]:
+                        conn["remote_host"] = resolved_host
+                        conn["raddr"] = (
+                            f"{resolved_host} ({conn['remote_ip']}):{conn['raddr'].split(':')[-1]}"
+                        )
+                        conn["needs_resolution"] = False
+
+            self.text_widget.delete("1.0", tk.END)
+            self.text_widget.insert("1.0", format_connections(self.connections))
+
+        except (tk.TclError, RuntimeError, AttributeError):
+            # Widget no longer exists, mark as invalid
+            self.invalidate()
+
+
+# Global GUI updater instance
+gui_updater = SafeGUIUpdater()
+
+
+def resolve_hostname_async(ip):
     """Resolve hostname in background and update display"""
     if ip in hostname_cache:
         return
+
     try:
         hostname = socket.gethostbyaddr(ip)[0]
         hostname_cache[ip] = hostname
 
-        if window_open and text_widget_ref[0] is not None:
+        # Schedule GUI update only if window is still open
+        if window_open and gui_updater.is_valid and gui_updater.text_widget:
             try:
-                text_widget = text_widget_ref[0]
-                if text_widget and text_widget.winfo_exists():
-                    text_widget.after(
-                        0,
-                        lambda: update_display_from_cache(
-                            text_widget_ref, connections_ref
-                        ),
-                    )
+                gui_updater.text_widget.after(0, gui_updater.safe_update_display)
             except (tk.TclError, RuntimeError, AttributeError):
-                pass
+                gui_updater.invalidate()
 
     except socket.herror:
         hostname_cache[ip] = ip
@@ -153,58 +202,14 @@ def resolve_hostname_async(ip, text_widget_ref, connections_ref):
         pass
 
 
-def update_display_from_cache(text_widget_ref, connections_ref):
-    """Update existing connections with resolved hostnames from cache"""
-    if not window_open:
-        return
-
-    try:
-        text_widget = text_widget_ref[0]
-        if not text_widget.winfo_exists():
-            return
-
-        connections = connections_ref[0]
-        status_label = connections_ref[1] if len(connections_ref) > 1 else None
-
-        if status_label and status_label.winfo_exists():
-            status_label.config(
-                text=f"View: {'Active Connections Only' if SHOW_ONLY_ACTIVE else 'All Connections'}"
-            )
-
-        for conn in connections:
-            if conn["remote_ip"] and conn["remote_ip"] in hostname_cache:
-                resolved_host = hostname_cache[conn["remote_ip"]]
-                if resolved_host != conn["remote_host"]:
-                    conn["remote_host"] = resolved_host
-                    conn["raddr"] = (
-                        f"{resolved_host} ({conn['remote_ip']}):{conn['raddr'].split(':')[-1]}"
-                    )
-                    conn["needs_resolution"] = False
-
-        text_widget.delete("1.0", tk.END)
-        text_widget.insert("1.0", format_connections(connections))
-    except (tk.TclError, RuntimeError, AttributeError):
-        pass
-
-
-def monitor_connections(text_widget_ref, connections_ref):
+def monitor_connections():
     """Monitor for new connections and update display"""
     last_connections = set()
     last_show_mode = SHOW_ONLY_ACTIVE
 
     while not stop_monitoring.is_set():
         try:
-            if not window_open:
-                break
-
-            text_widget = text_widget_ref[0]
-            if not text_widget:
-                break
-
-            try:
-                if not text_widget.winfo_exists():
-                    break
-            except (tk.TclError, AttributeError):
+            if not window_open or not gui_updater.is_valid:
                 break
 
             mode_changed = last_show_mode != SHOW_ONLY_ACTIVE
@@ -214,30 +219,31 @@ def monitor_connections(text_widget_ref, connections_ref):
             current_ids = {conn["id"] for conn in current_connections}
 
             if current_ids != last_connections or mode_changed:
-                connections_ref[0] = current_connections
+                gui_updater.connections = current_connections
 
-                if window_open and text_widget and text_widget.winfo_exists():
+                # Schedule GUI update
+                if window_open and gui_updater.is_valid and gui_updater.text_widget:
                     try:
-                        text_widget.after(
-                            0,
-                            lambda: update_display_from_cache(
-                                text_widget_ref, connections_ref
-                            ),
+                        gui_updater.text_widget.after(
+                            0, gui_updater.safe_update_display
                         )
                     except (tk.TclError, RuntimeError, AttributeError):
+                        gui_updater.invalidate()
                         break
 
+                # Start hostname resolution threads
                 for conn in current_connections:
                     if conn["needs_resolution"]:
                         Thread(
                             target=resolve_hostname_async,
-                            args=(conn["remote_ip"], text_widget_ref, connections_ref),
+                            args=(conn["remote_ip"],),
                             daemon=True,
                         ).start()
 
                 last_connections = current_ids
 
             stop_monitoring.wait(4.0)
+
         except (tk.TclError, RuntimeError, AttributeError):
             break
         except Exception as e:
@@ -264,14 +270,6 @@ def toggle_view(icon, item):
     SHOW_ONLY_ACTIVE = not SHOW_ONLY_ACTIVE
     icon.menu = create_menu()
 
-    if window_open and current_window:
-        try:
-            if current_window.winfo_exists():
-                stop_monitoring.set()
-                stop_monitoring.clear()
-        except (tk.TclError, AttributeError):
-            pass
-
 
 def show_window():
     """Display connections window"""
@@ -293,6 +291,7 @@ def show_window():
     root = tk.Tk()
     root.title("Active Connections")
     root.geometry("1000x700")
+    current_window = root
 
     frame = tk.Frame(root)
     frame.pack(fill="both", expand=True, padx=5, pady=5)
@@ -316,43 +315,47 @@ def show_window():
     text.pack(side="left", fill="both", expand=True)
 
     connections = list_connections_fast(SHOW_ONLY_ACTIVE)
-    connections_ref = [connections, status_label]
 
-    text_widget_ref = [text]
+    # Set up the GUI updater with current widgets
+    gui_updater.set_widgets(text, connections, status_label)
 
     text.insert("1.0", format_connections(connections))
 
     def close_window():
         global window_open, current_window, monitor_thread
         window_open = False
+
+        # Invalidate GUI updater to prevent further updates
+        gui_updater.invalidate()
+
+        # Stop monitoring thread
         stop_monitoring.set()
 
-        text_widget_ref[0] = None
-        try:
-            if monitor_thread and monitor_thread.is_alive():
-                monitor_thread.join(timeout=1.0)
-        except:
-            pass
+        # Wait for monitor thread to finish
+        if monitor_thread and monitor_thread.is_alive():
+            monitor_thread.join(timeout=1.0)
+
         try:
             root.quit()
             root.destroy()
         except tk.TclError:
             pass
+
         current_window = None
 
     root.protocol("WM_DELETE_WINDOW", close_window)
 
+    # Start hostname resolution for initial connections
     for conn in connections:
         if conn["needs_resolution"]:
             Thread(
                 target=resolve_hostname_async,
-                args=(conn["remote_ip"], text_widget_ref, connections_ref),
+                args=(conn["remote_ip"],),
                 daemon=True,
             ).start()
 
-    monitor_thread = Thread(
-        target=monitor_connections, args=(text_widget_ref, connections_ref), daemon=True
-    )
+    # Start monitoring thread
+    monitor_thread = Thread(target=monitor_connections, daemon=True)
     monitor_thread.start()
 
     try:
@@ -360,7 +363,9 @@ def show_window():
     except tk.TclError:
         pass
 
+    # Cleanup after mainloop exits
     window_open = False
+    gui_updater.invalidate()
     current_window = None
 
 
@@ -370,12 +375,18 @@ def quit_application(icon, item):
 
     icon.stop()
 
+    # Stop monitoring and invalidate GUI updater
+    stop_monitoring.set()
+    gui_updater.invalidate()
+
     if window_open and current_window:
         try:
             current_window.after(0, current_window.destroy)
         except:
             pass
 
+    # Give threads a moment to cleanup
+    time.sleep(0.1)
     os._exit(0)
 
 
