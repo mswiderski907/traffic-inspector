@@ -233,12 +233,11 @@ def show_connection_details(connection):
     """Show detailed information about a connection in a popup window"""
     details_window = tk.Toplevel()
     details_window.title(f"Connection Details - {connection['name']}")
-    details_window.geometry("500x400")
-    details_window.resizable(False, False)
+    details_window.geometry("600x650")
+    details_window.resizable(True, True)
 
-    # Make window modal
+    # Remove modal behavior - don't grab focus
     details_window.transient(current_window)
-    details_window.grab_set()
 
     main_frame = tk.Frame(details_window, padx=20, pady=20)
     main_frame.pack(fill="both", expand=True)
@@ -366,6 +365,85 @@ def show_connection_details(connection):
             )
             remove_btn.pack(side="left")
 
+        # Network tools section
+        tools_frame = tk.Frame(main_frame)
+        tools_frame.pack(fill="x", pady=(15, 10))
+
+        tools_label = tk.Label(
+            tools_frame, text="Network Tools:", font=("Arial", 10, "bold")
+        )
+        tools_label.pack(anchor="w", pady=(0, 10))
+
+        tools_button_frame = tk.Frame(tools_frame)
+        tools_button_frame.pack(anchor="w", pady=(0, 10))
+
+        # Create output area for network tools
+        output_frame = tk.Frame(tools_frame)
+        output_frame.pack(fill="both", expand=True)
+
+        output_text = tk.Text(
+            output_frame,
+            wrap="none",
+            font=("Consolas", 8),
+            bg="black",
+            fg="white",
+            height=12,
+        )
+
+        output_v_scrollbar = tk.Scrollbar(
+            output_frame, orient="vertical", command=output_text.yview
+        )
+        output_h_scrollbar = tk.Scrollbar(
+            output_frame, orient="horizontal", command=output_text.xview
+        )
+        output_text.configure(
+            yscrollcommand=output_v_scrollbar.set, xscrollcommand=output_h_scrollbar.set
+        )
+
+        output_v_scrollbar.pack(side="right", fill="y")
+        output_h_scrollbar.pack(side="bottom", fill="x")
+        output_text.pack(side="left", fill="both", expand=True)
+
+        def run_ping():
+            run_network_command(
+                "ping", connection["remote_ip"], output_text, tools_button_frame
+            )
+
+        def run_tracert():
+            run_network_command(
+                "tracert", connection["remote_ip"], output_text, tools_button_frame
+            )
+
+        ping_btn = tk.Button(
+            tools_button_frame,
+            text="Ping",
+            command=run_ping,
+            bg="lightblue",
+            font=("Arial", 9),
+            width=10,
+        )
+        ping_btn.pack(side="left", padx=(0, 10))
+
+        tracert_btn = tk.Button(
+            tools_button_frame,
+            text="Tracert",
+            command=run_tracert,
+            bg="lightyellow",
+            font=("Arial", 9),
+            width=10,
+        )
+        tracert_btn.pack(side="left", padx=(0, 10))
+
+        clear_btn = tk.Button(
+            tools_button_frame,
+            text="Clear Output",
+            command=lambda: output_text.delete("1.0", tk.END),
+            bg="lightgray",
+            font=("Arial", 9),
+            width=12,
+        )
+        clear_btn.pack(side="left")
+
     # Close button
     close_frame = tk.Frame(main_frame)
     close_frame.pack(fill="x", pady=(10, 0))
@@ -385,3 +463,117 @@ def show_connection_details(connection):
 
     # Focus the window
     details_window.focus_set()
+
+
+def run_network_command(tool, target_ip, output_text, button_frame):
+    """Run ping or tracert and display results in the provided text widget"""
+    import subprocess
+    import platform
+    from threading import Thread
+
+    def disable_buttons():
+        """Disable network tool buttons while command is running"""
+        for widget in button_frame.winfo_children():
+            if isinstance(widget, tk.Button) and widget["text"] in ["Ping", "Tracert"]:
+                widget.config(state="disabled")
+
+    def enable_buttons():
+        """Re-enable network tool buttons after command completes"""
+        for widget in button_frame.winfo_children():
+            if isinstance(widget, tk.Button) and widget["text"] in ["Ping", "Tracert"]:
+                widget.config(state="normal")
+
+    def run_command():
+        """Run the network command in a separate thread"""
+        try:
+            # Disable buttons while running
+            output_text.after(0, disable_buttons)
+
+            # Clear previous output and add header
+            def add_header():
+                output_text.delete("1.0", tk.END)
+                output_text.insert(
+                    tk.END, f"Running {tool.upper()} to {target_ip}...\n\n"
+                )
+                output_text.see(tk.END)
+
+            output_text.after(0, add_header)
+
+            # Determine the correct command based on OS
+            system = platform.system().lower()
+
+            cmd = None
+            if tool == "ping":
+                if system == "windows":
+                    cmd = ["ping", "-n", "4", target_ip]
+                else:
+                    cmd = ["ping", "-c", "4", target_ip]
+            elif tool == "tracert":
+                if system == "windows":
+                    cmd = ["tracert", target_ip]
+                else:
+                    cmd = ["traceroute", target_ip]
+
+            # Run the command
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if system == "windows" else 0,
+            )
+
+            # Read output line by line and update the display
+            def update_output(line):
+                try:
+                    output_text.insert(tk.END, line)
+                    output_text.see(tk.END)  # Auto-scroll to bottom
+                except tk.TclError:
+                    pass
+
+            for line in process.stdout:
+                output_text.after(0, lambda l=line: update_output(l))
+
+            process.wait()
+
+            # Add completion message
+            def add_completion():
+                if process.returncode == 0:
+                    output_text.insert(
+                        tk.END, f"\n{tool.upper()} completed successfully.\n"
+                    )
+                else:
+                    output_text.insert(
+                        tk.END,
+                        f"\n{tool.upper()} completed with errors (return code: {process.returncode}).\n",
+                    )
+                output_text.see(tk.END)
+                enable_buttons()
+
+            output_text.after(0, add_completion)
+
+        except FileNotFoundError:
+
+            def show_error():
+                output_text.delete("1.0", tk.END)
+                output_text.insert(
+                    tk.END, f"Error: {tool} command not found on this system.\n"
+                )
+                output_text.insert(
+                    tk.END, f"Make sure {tool} is installed and available in PATH.\n"
+                )
+                enable_buttons()
+
+            output_text.after(0, show_error)
+
+        except Exception as e:
+
+            def show_error():
+                output_text.delete("1.0", tk.END)
+                output_text.insert(tk.END, f"Error running {tool}: {str(e)}\n")
+                enable_buttons()
+
+            output_text.after(0, show_error)
+
+    # Start the command in a background thread
+    Thread(target=run_command, daemon=True).start()
