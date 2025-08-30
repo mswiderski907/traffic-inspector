@@ -3,7 +3,12 @@ Network connection monitoring and analysis
 """
 
 import psutil
-from .config import hostname_cache, is_trusted
+from .config import (
+    hostname_cache,
+    is_trusted,
+    is_connection_user_marked,
+    get_connection_trust_status,
+)
 
 
 def list_connections_fast(only_active=False):
@@ -57,12 +62,21 @@ def list_connections_fast(only_active=False):
 
 def format_connections(connections):
     """Format connections for display"""
+
     trusted_lines = []
     untrusted_lines = []
     listening_lines = []
 
     for conn in connections:
         line = f"{conn['name']:<25} PID: {conn['pid']:<6} Local: {conn['laddr']:<21} Remote: {conn['raddr']}"
+
+        # Add trust status indicators for user-marked connections
+        if conn["remote_ip"] and is_connection_user_marked(conn["remote_ip"]):
+            user_trust = get_connection_trust_status(conn["remote_ip"])
+            if user_trust:
+                line += " [USER: TRUSTED]"
+            else:
+                line += " [USER: UNTRUSTED]"
 
         if conn["type"] == "Listening":
             listening_lines.append(line)
