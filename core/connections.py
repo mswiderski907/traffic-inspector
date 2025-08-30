@@ -11,6 +11,89 @@ from .config import (
 )
 
 
+def analyze_process_path(process_name, exe_path):
+    """Analyze if a process path looks suspicious"""
+    import os
+    import platform
+
+    if exe_path in ["N/A", "Access Denied"]:
+        return "Unknown", "Cannot access process path"
+
+    try:
+        # Normalize the path
+        exe_path = os.path.normpath(exe_path.lower())
+        process_name_lower = process_name.lower()
+
+        system = platform.system().lower()
+
+        if system == "windows":
+            # Windows system process locations
+            system_locations = [
+                "c:\\windows\\system32",
+                "c:\\windows\\syswow64",
+                "c:\\windows",
+                "c:\\program files",
+                "c:\\program files (x86)",
+            ]
+
+            # Known system processes and their expected locations
+            system_processes = {
+                "svchost.exe": ["c:\\windows\\system32"],
+                "explorer.exe": ["c:\\windows"],
+                "winlogon.exe": ["c:\\windows\\system32"],
+                "csrss.exe": ["c:\\windows\\system32"],
+                "lsass.exe": ["c:\\windows\\system32"],
+                "services.exe": ["c:\\windows\\system32"],
+                "spoolsv.exe": ["c:\\windows\\system32"],
+                "dwm.exe": ["c:\\windows\\system32"],
+                "smss.exe": ["c:\\windows\\system32"],
+            }
+
+            # Check if it's a known system process in wrong location
+            if process_name_lower in system_processes:
+                expected_paths = system_processes[process_name_lower]
+                process_dir = os.path.dirname(exe_path)
+
+                if not any(
+                    process_dir.startswith(expected.lower())
+                    for expected in expected_paths
+                ):
+                    return (
+                        "Suspicious",
+                        f"System process running from unexpected location",
+                    )
+                else:
+                    return "System Process", "Running from expected system location"
+
+            # Check if it's in a system directory
+            process_dir = os.path.dirname(exe_path)
+            if any(process_dir.startswith(sys_loc) for sys_loc in system_locations):
+                return "System Location", "Running from system directory"
+            else:
+                return "User Location", "Running from user/application directory"
+
+        else:  # Linux/Mac
+            system_locations = [
+                "/bin",
+                "/sbin",
+                "/usr/bin",
+                "/usr/sbin",
+                "/usr/local/bin",
+                "/system",
+                "/usr/lib",
+                "/lib",
+            ]
+
+            process_dir = os.path.dirname(exe_path)
+            if any(process_dir.startswith(sys_loc) for sys_loc in system_locations):
+                return "System Location", "Running from system directory"
+            else:
+                return "User Location", "Running from user/application directory"
+
+    except Exception:
+        return "Unknown", "Could not analyze path"
+
+
 def list_connections_fast(only_active=False):
     """Get connections quickly without hostname resolution"""
     connections = []
@@ -22,8 +105,14 @@ def list_connections_fast(only_active=False):
         try:
             process = psutil.Process(pid)
             name = process.name()
+            # Get the full executable path
+            try:
+                exe_path = process.exe()
+            except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+                exe_path = "Access Denied"
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             name = "N/A"
+            exe_path = "N/A"
 
         laddr = f"{conn.laddr.ip}:{conn.laddr.port}" if conn.laddr else "N/A"
         if conn.raddr:
@@ -46,6 +135,7 @@ def list_connections_fast(only_active=False):
             {
                 "name": name,
                 "pid": pid,
+                "exe_path": exe_path,
                 "laddr": laddr,
                 "raddr": raddr,
                 "remote_ip": remote_ip,
@@ -77,6 +167,16 @@ def format_connections(connections):
                 line += " [USER: TRUSTED]"
             else:
                 line += " [USER: UNTRUSTED]"
+
+        # Add security indicators for suspicious process paths
+        try:
+            path_analysis, _ = analyze_process_path(conn["name"], conn["exe_path"])
+            if path_analysis == "Suspicious":
+                line += " [⚠️ SUSPICIOUS PATH]"
+            elif path_analysis == "System Process":
+                line += " [🔒 SYSTEM]"
+        except:
+            pass
 
         if conn["type"] == "Listening":
             listening_lines.append(line)

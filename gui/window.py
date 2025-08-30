@@ -8,7 +8,11 @@ from threading import Thread
 
 from core.config import toggle_show_active
 import core.config
-from core.connections import list_connections_fast, format_connections
+from core.connections import (
+    list_connections_fast,
+    format_connections,
+    analyze_process_path,
+)
 from core.monitor import monitor_connections, stop_monitoring, resolve_hostname_async
 from .updater import gui_updater
 
@@ -243,8 +247,13 @@ def show_connection_details(connection):
     main_frame.pack(fill="both", expand=True)
 
     # Connection details
+    path_analysis, path_note = analyze_process_path(
+        connection["name"], connection["exe_path"]
+    )
     details_text = f"""Process: {connection['name']}
         Process ID: {connection['pid']}
+        Executable Path: {connection['exe_path']}
+        Path Analysis: {path_analysis} - {path_note}
         Local Address: {connection['laddr']}
         Remote Address: {connection['raddr']}
         Status: {connection['status']}
