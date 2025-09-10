@@ -131,6 +131,9 @@ def list_connections_fast(only_active=False):
             if not conn.raddr or conn.status != psutil.CONN_ESTABLISHED:
                 continue
 
+        # Analyze process path once and store the result
+        path_analysis, path_note = analyze_process_path(name, exe_path)
+        
         connections.append(
             {
                 "name": name,
@@ -144,6 +147,8 @@ def list_connections_fast(only_active=False):
                 "status": conn.status,
                 "type": connection_type,
                 "id": f"{name}_{pid}_{laddr}_{raddr}_{conn.status}",
+                "path_analysis": path_analysis,
+                "path_note": path_note,
             }
         )
 
@@ -168,15 +173,16 @@ def format_connections(connections):
             else:
                 line += " [USER: UNTRUSTED]"
 
+        # Add process trust indicators (only show if trusted)
+        from .config import is_process_trusted
+        if is_process_trusted(conn["name"], conn["exe_path"]):
+            line += " [PROCESS: TRUSTED]"
+
         # Add security indicators for suspicious process paths
-        try:
-            path_analysis, _ = analyze_process_path(conn["name"], conn["exe_path"])
-            if path_analysis == "Suspicious":
-                line += " [⚠️ SUSPICIOUS PATH]"
-            elif path_analysis == "System Process":
-                line += " [🔒 SYSTEM]"
-        except:
-            pass
+        if conn["path_analysis"] == "Suspicious":
+            line += " [⚠️ SUSPICIOUS PATH]"
+        elif conn["path_analysis"] == "System Process":
+            line += " [🔒 SYSTEM]"
 
         if conn["type"] == "Listening":
             listening_lines.append(line)

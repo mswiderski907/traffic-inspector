@@ -169,6 +169,16 @@ def show_window():
                     else:
                         expected_line += " [USER: UNTRUSTED]"
 
+                # Add process trust indicators using stored data (only if trusted)
+                if core.config.is_process_trusted(conn["name"], conn["exe_path"]):
+                    expected_line += " [PROCESS: TRUSTED]"
+
+                # Add security indicators using stored path analysis
+                if conn["path_analysis"] == "Suspicious":
+                    expected_line += " [⚠️ SUSPICIOUS PATH]"
+                elif conn["path_analysis"] == "System Process":
+                    expected_line += " [🔒 SYSTEM]"
+
                 if clicked_line == expected_line:
                     show_connection_details(conn)
                     break
@@ -247,9 +257,7 @@ def show_connection_details(connection):
     main_frame.pack(fill="both", expand=True)
 
     # Connection details
-    path_analysis, path_note = analyze_process_path(
-        connection["name"], connection["exe_path"]
-    )
+    path_analysis, path_note = connection["path_analysis"], connection["path_note"]
     details_text = f"""Process: {connection['name']}
         Process ID: {connection['pid']}
         Executable Path: {connection['exe_path']}
@@ -279,15 +287,24 @@ def show_connection_details(connection):
         user_trust_status = get_connection_trust_status(connection["remote_ip"])
 
         details_text += (
-            f"\n\nTrust Status: {'Trusted' if is_currently_trusted else 'Untrusted'}"
+            f"\n\nConnection Trust Status: {'Trusted' if is_currently_trusted else 'Untrusted'}"
         )
 
         if user_marked:
             details_text += (
-                f"\nUser Override: {'Trusted' if user_trust_status else 'Untrusted'}"
+                f"\nConnection User Override: {'Trusted' if user_trust_status else 'Untrusted'}"
             )
         else:
-            details_text += "\nUser Override: None (using default rules)"
+            details_text += "\nConnection User Override: None (using default rules)"
+
+    # Add process trust status information
+    from core.config import is_process_trusted
+
+    is_process_currently_trusted = is_process_trusted(connection["name"], connection["exe_path"])
+
+    details_text += (
+        f"\n\nProcess Trust Status: {'Trusted' if is_process_currently_trusted else 'Untrusted (default)'}"
+    )
 
     # Details display
     details_label = tk.Label(
@@ -374,7 +391,59 @@ def show_connection_details(connection):
             )
             remove_btn.pack(side="left")
 
-        # Network tools section
+    # Process trust management buttons (for all connections)
+    process_trust_frame = tk.Frame(main_frame)
+    process_trust_frame.pack(fill="x", pady=(15, 10))
+
+    process_trust_label = tk.Label(
+        process_trust_frame, text="Mark this process as:", font=("Arial", 10, "bold")
+    )
+    process_trust_label.pack(anchor="w", pady=(0, 10))
+
+    process_button_frame = tk.Frame(process_trust_frame)
+    process_button_frame.pack(anchor="w")
+
+    def mark_process_trusted_action():
+        from core.config import mark_process_trusted
+        mark_process_trusted(connection["name"], connection["exe_path"])
+        details_window.destroy()
+        refresh_connections_display()
+
+    def remove_process_override():
+        from core.config import (
+            dynamic_trusted_processes,
+            save_trusted_processes,
+            generate_process_key,
+        )
+        process_key = generate_process_key(connection["name"], connection["exe_path"])
+        if process_key in dynamic_trusted_processes:
+            del dynamic_trusted_processes[process_key]
+            save_trusted_processes()
+        details_window.destroy()
+        refresh_connections_display()
+
+    process_trusted_btn = tk.Button(
+        process_button_frame,
+        text="Mark Process as Trusted",
+        command=mark_process_trusted_action,
+        bg="lightgreen",
+        font=("Arial", 9),
+    )
+    process_trusted_btn.pack(side="left", padx=(0, 10))
+
+    # Only show remove button if user has manually set process trust status
+    if core.config.is_process_user_marked(connection["name"], connection["exe_path"]):
+        process_remove_btn = tk.Button(
+            process_button_frame,
+            text="Remove Process Override",
+            command=remove_process_override,
+            bg="lightgray",
+            font=("Arial", 9),
+        )
+        process_remove_btn.pack(side="left")
+
+    # Network tools section (for outbound connections with remote IPs)
+    if connection["remote_ip"] and connection["type"] == "Outbound":
         tools_frame = tk.Frame(main_frame)
         tools_frame.pack(fill="x", pady=(15, 10))
 

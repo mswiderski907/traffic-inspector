@@ -9,6 +9,7 @@ import json
 # Global configuration
 SHOW_ONLY_ACTIVE = True
 TRUSTED_CONNECTIONS_FILE = "trusted_connections.json"
+TRUSTED_PROCESSES_FILE = "trusted_processes.json"
 
 # Network configuration
 trusted_networks = [
@@ -27,6 +28,10 @@ hostname_cache = {}
 # Format: {"ip": {"trusted": bool, "hostname": str, "added_by_user": bool}}
 dynamic_trusted_connections = {}
 
+# Format: {"process_key": {"trusted": bool, "name": str, "exe_path": str, "added_by_user": bool}}
+# process_key is generated from name and exe_path for uniqueness
+dynamic_trusted_processes = {}
+
 
 def load_trusted_connections():
     """Load trusted connections from file"""
@@ -39,6 +44,17 @@ def load_trusted_connections():
         dynamic_trusted_connections = {}
 
 
+def load_trusted_processes():
+    """Load trusted processes from file"""
+    global dynamic_trusted_processes
+    try:
+        if os.path.exists(TRUSTED_PROCESSES_FILE):
+            with open(TRUSTED_PROCESSES_FILE, "r") as f:
+                dynamic_trusted_processes = json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError, PermissionError):
+        dynamic_trusted_processes = {}
+
+
 def save_trusted_connections():
     """Save trusted connections to file"""
     try:
@@ -46,6 +62,23 @@ def save_trusted_connections():
             json.dump(dynamic_trusted_connections, f, indent=2)
     except (PermissionError, OSError):
         pass
+
+
+def save_trusted_processes():
+    """Save trusted processes to file"""
+    try:
+        with open(TRUSTED_PROCESSES_FILE, "w") as f:
+            json.dump(dynamic_trusted_processes, f, indent=2)
+    except (PermissionError, OSError):
+        pass
+
+
+def generate_process_key(name, exe_path):
+    """Generate a unique key for a process based on name and exe_path"""
+    import hashlib
+    # Use both name and normalized path for uniqueness
+    key_data = f"{name.lower()}|{exe_path.lower()}"
+    return hashlib.md5(key_data.encode()).hexdigest()
 
 
 def mark_connection_trusted(ip, hostname, trusted=True):
@@ -56,6 +89,18 @@ def mark_connection_trusted(ip, hostname, trusted=True):
         "added_by_user": True,
     }
     save_trusted_connections()
+
+
+def mark_process_trusted(name, exe_path):
+    """Mark a process as trusted"""
+    process_key = generate_process_key(name, exe_path)
+    dynamic_trusted_processes[process_key] = {
+        "trusted": True,
+        "name": name,
+        "exe_path": exe_path,
+        "added_by_user": True,
+    }
+    save_trusted_processes()
 
 
 def is_connection_user_marked(ip):
@@ -70,6 +115,30 @@ def get_connection_trust_status(ip):
     if ip in dynamic_trusted_connections:
         return dynamic_trusted_connections[ip]["trusted"]
     return None
+
+
+def is_process_user_marked(name, exe_path):
+    """Check if a process was manually marked by the user"""
+    process_key = generate_process_key(name, exe_path)
+    return process_key in dynamic_trusted_processes and dynamic_trusted_processes[process_key].get(
+        "added_by_user", False
+    )
+
+
+def get_process_trust_status(name, exe_path):
+    """Get the trust status of a process"""
+    process_key = generate_process_key(name, exe_path)
+    if process_key in dynamic_trusted_processes:
+        return dynamic_trusted_processes[process_key]["trusted"]
+    return None
+
+
+def is_process_trusted(name, exe_path):
+    """Check if a process is trusted (user override takes precedence)"""
+    process_key = generate_process_key(name, exe_path)
+    if process_key in dynamic_trusted_processes:
+        return dynamic_trusted_processes[process_key]["trusted"]
+    return False  # Default to untrusted if not explicitly marked
 
 
 def toggle_show_active():
@@ -97,3 +166,4 @@ def is_trusted(ip, hostname):
 
 
 load_trusted_connections()
+load_trusted_processes()
