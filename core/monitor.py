@@ -5,6 +5,7 @@ Background monitoring and hostname resolution
 import socket
 from threading import Thread, Event
 import tkinter as tk
+import time
 
 from .config import hostname_cache
 import core.config
@@ -12,6 +13,11 @@ from .connections import list_connections_fast
 
 # Global monitoring control
 stop_monitoring = Event()
+stop_background_monitoring = Event()
+
+# Shared connection data
+current_connections = []
+last_connections_update = 0
 
 
 def resolve_hostname_async(ip):
@@ -61,6 +67,8 @@ def monitor_connections():
             if current_ids != last_connections or mode_changed:
                 gui_updater.connections = current_connections
 
+                # print(f"GUI monitoring: found {len(current_connections)} connections")
+
                 # Schedule GUI update
                 if window_open and gui_updater.is_valid and gui_updater.text_widget:
                     try:
@@ -89,3 +97,59 @@ def monitor_connections():
         except Exception as e:
             print(f"Error in monitor_connections: {e}")
             stop_monitoring.wait(4.0)
+
+
+def background_monitor_connections():
+    """Background monitoring without GUI updates - slower interval, no hostname resolution"""
+    global current_connections, last_connections_update
+
+    print("Starting background connection monitoring...")
+
+    while not stop_background_monitoring.is_set():
+        try:
+            # Check window state dynamically
+            from gui.window import window_open
+
+            # Only run background monitoring when window is closed
+            if not window_open:
+                # Update connections every 10 seconds
+                connections = list_connections_fast(core.config.SHOW_ONLY_ACTIVE)
+                current_connections = connections
+                last_connections_update = time.time()
+
+                # print(f"Background monitoring: found {len(connections)} connections")
+
+                # TODO: Future feature - check for untrusted process connections to untrusted domains
+                # This is where we could add alerts for suspicious connections
+
+                # Wait 10 seconds before next check
+                stop_background_monitoring.wait(10.0)
+            else:
+                # Window is open, so GUI monitoring is handling updates
+                # Just wait a bit and check again
+                stop_background_monitoring.wait(2.0)
+
+        except Exception as e:
+            print(f"Error in background_monitor_connections: {e}")
+            stop_background_monitoring.wait(15.0)
+
+    print("Background connection monitoring stopped.")
+
+
+def start_background_monitoring():
+    """Start the background monitoring thread"""
+    background_thread = Thread(target=background_monitor_connections, daemon=True)
+    background_thread.start()
+    return background_thread
+
+
+def stop_all_monitoring():
+    """Stop all monitoring threads"""
+    stop_monitoring.set()
+    stop_background_monitoring.set()
+
+
+def get_current_connections():
+    """Get the current connections from background monitoring"""
+    global current_connections, last_connections_update
+    return current_connections, last_connections_update

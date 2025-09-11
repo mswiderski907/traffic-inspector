@@ -34,7 +34,16 @@ def refresh_connections_display():
         scroll_y = text_widget.yview()
         scroll_x = text_widget.xview()
 
-        new_connections = list_connections_fast(core.config.SHOW_ONLY_ACTIVE)
+        # Try to use background data if recent, otherwise fetch fresh
+        import time
+        from core.monitor import get_current_connections
+        connections, last_update = get_current_connections()
+        if not connections or (time.time() - last_update) > 5:
+            # If no background data or data is older than 5 seconds, fetch fresh
+            new_connections = list_connections_fast(core.config.SHOW_ONLY_ACTIVE)
+        else:
+            new_connections = connections
+            
         gui_updater.connections = new_connections
 
         if text_widget and text_widget.winfo_exists():
@@ -188,7 +197,13 @@ def show_window():
     # Bind double-click event
     text.bind("<Double-Button-1>", on_text_double_click)
 
-    connections = list_connections_fast(core.config.SHOW_ONLY_ACTIVE)
+    # Try to get connections from background monitoring first, fall back to fresh fetch
+    import time
+    from core.monitor import get_current_connections
+    connections, last_update = get_current_connections()
+    if not connections or (time.time() - last_update) > 15:
+        # If no background data or data is stale (>15 seconds old), fetch fresh
+        connections = list_connections_fast(core.config.SHOW_ONLY_ACTIVE)
 
     # Set up the GUI updater with current widgets (pass dropdown instead of status label)
     gui_updater.set_widgets(text, connections, view_dropdown)

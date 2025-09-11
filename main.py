@@ -42,14 +42,14 @@ def on_clicked(icon, item=None):
 
 def quit_application(icon, item):
     """Properly quit the application"""
-    from core.monitor import stop_monitoring
+    from core.monitor import stop_all_monitoring
     from gui.updater import gui_updater
     from gui.window import window_open, current_window
 
     icon.stop()
 
-    # Stop monitoring and invalidate GUI updater
-    stop_monitoring.set()
+    # Stop all monitoring and invalidate GUI updater
+    stop_all_monitoring()
     gui_updater.invalidate()
 
     if window_open and current_window:
@@ -64,5 +64,9 @@ def quit_application(icon, item):
 
 
 if __name__ == "__main__":
+    # Start background monitoring
+    from core.monitor import start_background_monitoring
+    start_background_monitoring()
+    
     icon = pystray.Icon("net_inspector", create_image(), menu=create_menu())
     icon.run()
