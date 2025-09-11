@@ -91,12 +91,55 @@ def show_window():
     frame = tk.Frame(root)
     frame.pack(fill="both", expand=True, padx=5, pady=5)
 
-    # Create dropdown frame for view selection
-    dropdown_frame = tk.Frame(frame, bg="lightgray")
-    dropdown_frame.pack(fill="x", pady=(0, 5))
-
+    # Create collapsible settings panel
+    settings_frame = tk.Frame(frame, bg="lightgray", relief="ridge", bd=1)
+    settings_frame.pack(fill="x", pady=(0, 5))
+    
+    # Settings header with expand/collapse button
+    settings_header = tk.Frame(settings_frame, bg="lightgray")
+    settings_header.pack(fill="x", padx=5, pady=2)
+    
+    settings_expanded = tk.BooleanVar(value=False)
+    
+    def toggle_settings():
+        if settings_expanded.get():
+            settings_content.pack_forget()
+            settings_toggle_btn.config(text="▶ Settings")
+            settings_expanded.set(False)
+        else:
+            settings_content.pack(fill="x", padx=5, pady=(0, 5))
+            settings_toggle_btn.config(text="▼ Settings")
+            settings_expanded.set(True)
+    
+    settings_toggle_btn = tk.Button(
+        settings_header,
+        text="▶ Settings",
+        command=toggle_settings,
+        bg="lightgray",
+        relief="flat",
+        font=("Arial", 9, "bold")
+    )
+    settings_toggle_btn.pack(side="left")
+    
+    # Add instructions to header
+    instructions_label = tk.Label(
+        settings_header,
+        text="Double-click any connection for details",
+        font=("Consolas", 8),
+        bg="lightgray",
+        fg="gray",
+    )
+    instructions_label.pack(side="right")
+    
+    # Settings content (initially hidden)
+    settings_content = tk.Frame(settings_frame, bg="lightgray")
+    
+    # View settings row
+    view_row = tk.Frame(settings_content, bg="lightgray")
+    view_row.pack(fill="x", pady=2)
+    
     view_label = tk.Label(
-        dropdown_frame, text="View:", font=("Consolas", 9), bg="lightgray"
+        view_row, text="View:", font=("Consolas", 9), bg="lightgray"
     )
     view_label.pack(side="left", padx=(5, 5))
 
@@ -117,7 +160,7 @@ def show_window():
             refresh_connections_display()
 
     view_dropdown = ttk.Combobox(
-        dropdown_frame,
+        view_row,
         textvariable=view_var,
         values=view_options,
         state="readonly",
@@ -126,16 +169,62 @@ def show_window():
     )
     view_dropdown.pack(side="left", padx=(0, 5))
     view_dropdown.bind("<<ComboboxSelected>>", on_view_change)
-
-    # Add instructions
-    instructions_label = tk.Label(
-        dropdown_frame,
-        text="Double-click any connection for details",
-        font=("Consolas", 8),
-        bg="lightgray",
-        fg="gray",
+    
+    # Notification settings row
+    notification_row = tk.Frame(settings_content, bg="lightgray")
+    notification_row.pack(fill="x", pady=2)
+    
+    notification_label = tk.Label(
+        notification_row, text="Notifications:", font=("Consolas", 9), bg="lightgray"
     )
-    instructions_label.pack(side="right", padx=(5, 5))
+    notification_label.pack(side="left", padx=(5, 5))
+    
+    # Create notification dropdown
+    notification_var = tk.StringVar()
+    notification_options = ["None", "High Risk Connections", "Untrusted Processes"]
+    notification_mode_map = {
+        "None": "none",
+        "High Risk Connections": "high_risk", 
+        "Untrusted Processes": "untrusted_processes"
+    }
+    reverse_mode_map = {v: k for k, v in notification_mode_map.items()}
+    
+    current_mode = core.config.NOTIFICATION_SETTINGS["mode"]
+    notification_var.set(reverse_mode_map.get(current_mode, "None"))
+    
+    def on_notification_change(*args):
+        """Handle notification setting change"""
+        selected = notification_var.get()
+        mode = notification_mode_map[selected]
+        core.config.update_notification_settings(mode)
+        print(f"Notification settings updated: {mode}")
+    
+    notification_dropdown = ttk.Combobox(
+        notification_row,
+        textvariable=notification_var,
+        values=notification_options,
+        state="readonly",
+        width=25,
+        font=("Consolas", 9),
+    )
+    notification_dropdown.pack(side="left", padx=(0, 5))
+    notification_dropdown.bind("<<ComboboxSelected>>", on_notification_change)
+    
+    # Test notification button
+    def test_notification():
+        """Test the notification system"""
+        from core.notifications import test_notification
+        test_notification()
+    
+    test_btn = tk.Button(
+        notification_row,
+        text="Test",
+        command=test_notification,
+        bg="lightblue",
+        font=("Arial", 8),
+        width=8
+    )
+    test_btn.pack(side="left", padx=(5, 0))
 
     text = tk.Text(frame, wrap="none", font=("consolas", 9))
 

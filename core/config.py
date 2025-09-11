@@ -10,6 +10,13 @@ import json
 SHOW_ONLY_ACTIVE = True
 TRUSTED_CONNECTIONS_FILE = "trusted_connections.json"
 TRUSTED_PROCESSES_FILE = "trusted_processes.json"
+SETTINGS_FILE = "settings.json"
+
+# Notification settings
+NOTIFICATION_SETTINGS = {
+    "mode": "none",  # "none", "high_risk", "untrusted_processes"
+    "enabled": True
+}
 
 # Network configuration
 trusted_networks = [
@@ -55,6 +62,18 @@ def load_trusted_processes():
         dynamic_trusted_processes = {}
 
 
+def load_settings():
+    """Load application settings from file"""
+    global NOTIFICATION_SETTINGS
+    try:
+        if os.path.exists(SETTINGS_FILE):
+            with open(SETTINGS_FILE, "r") as f:
+                loaded_settings = json.load(f)
+                NOTIFICATION_SETTINGS.update(loaded_settings)
+    except (json.JSONDecodeError, FileNotFoundError, PermissionError):
+        pass
+
+
 def save_trusted_connections():
     """Save trusted connections to file"""
     try:
@@ -71,6 +90,23 @@ def save_trusted_processes():
             json.dump(dynamic_trusted_processes, f, indent=2)
     except (PermissionError, OSError):
         pass
+
+
+def save_settings():
+    """Save application settings to file"""
+    try:
+        with open(SETTINGS_FILE, "w") as f:
+            json.dump(NOTIFICATION_SETTINGS, f, indent=2)
+    except (PermissionError, OSError):
+        pass
+
+
+def update_notification_settings(mode, enabled=True):
+    """Update notification settings"""
+    global NOTIFICATION_SETTINGS
+    NOTIFICATION_SETTINGS["mode"] = mode
+    NOTIFICATION_SETTINGS["enabled"] = enabled
+    save_settings()
 
 
 def generate_process_key(name, exe_path):
@@ -167,3 +203,4 @@ def is_trusted(ip, hostname):
 
 load_trusted_connections()
 load_trusted_processes()
+load_settings()

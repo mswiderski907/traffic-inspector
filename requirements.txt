@@ -9,3 +9,4 @@ platformdirs==4.3.8
 psutil==7.0.0
 pystray==0.19.5
 six==1.17.0
+plyer==2.1.0

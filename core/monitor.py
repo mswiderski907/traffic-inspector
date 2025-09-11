@@ -69,6 +69,18 @@ def monitor_connections():
 
                 # print(f"GUI monitoring: found {len(current_connections)} connections")
 
+                # Check for new connections and send notifications (when window is open too)
+                if not mode_changed:  # Only check for new connections if mode didn't change
+                    new_connection_ids = current_ids - last_connections
+                    if new_connection_ids:
+                        new_connections = [conn for conn in current_connections if conn["id"] in new_connection_ids]
+                        for conn in new_connections:
+                            try:
+                                from .notifications import show_connection_notification
+                                show_connection_notification(conn)
+                            except Exception as e:
+                                print(f"Notification error: {e}")
+
                 # Schedule GUI update
                 if window_open and gui_updater.is_valid and gui_updater.text_widget:
                     try:
@@ -105,6 +117,9 @@ def background_monitor_connections():
 
     print("Starting background connection monitoring...")
 
+    # Track previous connections for new connection detection
+    previous_connection_ids = set()
+
     while not stop_background_monitoring.is_set():
         try:
             # Check window state dynamically
@@ -119,8 +134,21 @@ def background_monitor_connections():
 
                 # print(f"Background monitoring: found {len(connections)} connections")
 
-                # TODO: Future feature - check for untrusted process connections to untrusted domains
-                # This is where we could add alerts for suspicious connections
+                # Check for new connections and send notifications
+                current_connection_ids = {conn["id"] for conn in connections}
+                new_connection_ids = current_connection_ids - previous_connection_ids
+
+                if new_connection_ids:
+                    # Find the actual new connections and check for notifications
+                    new_connections = [conn for conn in connections if conn["id"] in new_connection_ids]
+                    for conn in new_connections:
+                        try:
+                            from .notifications import show_connection_notification
+                            show_connection_notification(conn)
+                        except Exception as e:
+                            print(f"Notification error: {e}")
+
+                previous_connection_ids = current_connection_ids
 
                 # Wait 10 seconds before next check
                 stop_background_monitoring.wait(10.0)
